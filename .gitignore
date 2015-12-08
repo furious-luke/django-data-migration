@@ -10,3 +10,4 @@ dist/
 .tox
 blog_fixture.db
 docs/build/
+**~

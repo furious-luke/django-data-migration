@@ -2,6 +2,7 @@
 from __future__ import print_function
 from __future__ import unicode_literals
 from future.builtins import str
+import importlib
 
 from django.core.exceptions import ImproperlyConfigured, ObjectDoesNotExist
 from django.db.models import Model
@@ -13,6 +14,11 @@ import inspect
 import sys
 import inspect
 import re
+
+
+class SkipRow(Exception):
+    pass
+
 
 def is_a(klass=None, search_attr=None, fk=False, m2m=False, o2o=False,
                 exclude=False, delimiter=';', skip_missing=False,
@@ -240,6 +246,7 @@ class Migration(object):
 
         self.check_migration() # check the configuration of the Migration
         connection = self.open_db_connection()
+        self.connection = connection
 
         cursor = connection.cursor()
         cursor.execute(self.query)
@@ -320,7 +327,10 @@ class Migration(object):
         the required hook methods.
         """
         def create(row):
-            self.hook_before_transformation(row)
+            try:
+                self.hook_before_transformation(row)
+            except SkipRow:
+                return
 
             constructor_data, m2ms = self.transform_row_dataset(row)
             instance = self.model(**constructor_data)
@@ -521,7 +531,7 @@ class Importer(object):
             for app in self.installed_apps() ]
 
     @classmethod
-    def import_all(self, excludes=[]):
+    def import_all(self, excludes=[], includes=[]):
         """
         this does an `from X import *` for all existing migration specs
         """
@@ -531,8 +541,14 @@ class Importer(object):
             if len(matches) > 0:
                 continue
 
+            if includes:
+                matches = [inc for inc in includes if inc in app]
+                if not len(matches):
+                    continue
+
             try:
-                m = __import__(app)
+                m = importlib.import_module(app)
+                # m = __import__(app)
                 try:
                     attrlist = m.__all__
                 except AttributeError:
